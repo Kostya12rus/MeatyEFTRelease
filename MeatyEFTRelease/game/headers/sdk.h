@@ -119,6 +119,8 @@ namespace sdk
 		constexpr uint64_t Voice = 0x40; // string
 		constexpr uint64_t Id = 0x90; //int32_t
 		constexpr uint64_t Side = 0xB4; // EFT.EPlayerSide
+		constexpr uint64_t ProfileId = 0xC8; // string
+		constexpr uint64_t NickName = 0xD8; // string
 		constexpr uint64_t AccountId = 0xE0; //_AccountId_k__BackingField
 		constexpr uint64_t IsAI = 0xC0; // bool
 		constexpr uint64_t PlayerBody = 0xF8; // EFT.PlayerBody
@@ -230,8 +232,14 @@ namespace sdk
 		constexpr uint64_t Id = 0x10; // String
 		constexpr uint64_t AccountId = 0x18; // String
 		constexpr uint64_t Info = 0x48; // -.\uE9AD
+		constexpr uint64_t Settings = 0x78; // EFT.ProfileSettings
 		constexpr uint64_t QuestsData = 0x98; // object
 		constexpr uint64_t WishlistManager = 0x130; // object
+	}
+
+	namespace ProfileSettings
+	{
+		constexpr uint64_t Role = 0x10; // WildSpawnType / RoleId
 	}
 
 	namespace WishlistManager
@@ -248,8 +256,10 @@ namespace sdk
 
 	namespace PlayerInfo
 	{
+		constexpr uint64_t Nickname = 0x10; // String
 		constexpr uint64_t GroupId = 0x50; // String
 		constexpr uint64_t Side = 0x48; // [HUMAN] Int32
+		constexpr uint64_t Settings = 0x78; // EFT.ProfileSettings
 		constexpr uint64_t RegistrationDate = 0x4C; // Int32
 		constexpr uint64_t EntryPoint = 0x28; // String
 	}

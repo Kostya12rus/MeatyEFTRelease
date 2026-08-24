@@ -2302,6 +2302,27 @@ inline bool containsIgnoreCase(const std::string& str, const std::string& search
     return it != str.end();
 }
 
+static bool IsBossRoleId(const int roleId)
+{
+    static const std::unordered_set<int> bossRoleIds
+    {
+        2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 16, 17, 22, 23, 26, 27, 28, 29, 30,
+        32, 33, 36, 41, 42, 43, 44, 45, 47, 65, 66, 67,
+    };
+
+    return bossRoleIds.find(roleId) != bossRoleIds.end();
+}
+
+static bool IsPmcRoleId(const int roleId)
+{
+    static const std::unordered_set<int> pmcRoleIds
+    {
+        9, 51, 52,
+    };
+
+    return pmcRoleIds.find(roleId) != pmcRoleIds.end();
+}
+
 AIRole GetAIRoleInfo(const std::string& voiceLine)
 {
     if (containsIgnoreCase(voiceLine, "BossSanitar"))        return { "Sanitar", PlayerType::AIBoss };
@@ -2338,6 +2359,61 @@ AIRole GetAIRoleInfo(const std::string& voiceLine)
 
     //  Final fallback 
     return { voiceLine, PlayerType::AIBoss };
+}
+
+static void ClassifyPvePlayer(
+    PlayerCache& player,
+    const std::string& observedNickname)
+{
+    const bool isSavage =
+        (static_cast<uint32_t>(player.playerSide) &
+            static_cast<uint32_t>(EPlayerSide::Savage)) != 0;
+    const bool isBossRole = IsBossRoleId(player.roleId);
+    const bool isPmcRole = IsPmcRoleId(player.roleId);
+
+    player.isBlackDivision = false;
+
+    if (isBossRole)
+    {
+        player.name = !observedNickname.empty() ? observedNickname : "Boss";
+        player.isBoss = true;
+        player.isAi = true;
+        player.isPlayer = false;
+        player.isPlayerScav = false;
+        return;
+    }
+
+    // PVE PMCs can be reported as AI and can carry the Savage side.
+    // The PVE role identifier therefore takes priority over IsAI and Side.
+    if (isPmcRole || !isSavage)
+    {
+        player.name = !observedNickname.empty()
+            ? observedNickname
+            : "PMC " + std::to_string(mainGame.pmcNumber++);
+        player.isBoss = false;
+        player.isAi = false;
+        player.isPlayer = true;
+        player.isPlayerScav = false;
+        return;
+    }
+
+    if (player.isAi)
+    {
+        player.name = !observedNickname.empty() ? observedNickname : "Scav";
+        player.isBoss = false;
+        player.isAi = true;
+        player.isPlayer = false;
+        player.isPlayerScav = false;
+        return;
+    }
+
+    player.name = !observedNickname.empty()
+        ? observedNickname
+        : "PScav " + std::to_string(mainGame.pmcNumber++);
+    player.isBoss = false;
+    player.isAi = false;
+    player.isPlayer = true;
+    player.isPlayerScav = true;
 }
 
 std::optional<PlayerCache> Players::buildEntity(
@@ -2451,6 +2527,16 @@ std::optional<PlayerCache> Players::buildEntity(
             }
         };
 
+    auto ReadUnityStringFieldSafe =
+        [&](uint64_t fieldAddress, int maxLen = 128) -> std::string
+        {
+            uint64_t stringPtr = 0;
+            if (!TryReadPtr(fieldAddress, stringPtr))
+                return {};
+
+            return ReadUnityStringSafe(stringPtr, maxLen);
+        };
+
     auto LogInitFail = [&](const std::string& reason)
         {
             std::ostringstream ss;
@@ -2532,6 +2618,16 @@ std::optional<PlayerCache> Players::buildEntity(
 
         if (Utils::valid_pointer(newEntity.P_Profile))
         {
+            if (!newEntity.isLocal)
+            {
+                newEntity.profileId = ReadUnityStringFieldSafe(
+                    newEntity.P_Profile + sdk::Profile::Id,
+                    64);
+                newEntity.accountId = ReadUnityStringFieldSafe(
+                    newEntity.P_Profile + sdk::Profile::AccountId,
+                    64);
+            }
+
             if (!TryReadPtr(
                 newEntity.P_Profile + sdk::Profile::Info,
                 newEntity.P_Info))
@@ -2558,6 +2654,30 @@ std::optional<PlayerCache> Players::buildEntity(
 
         if (Utils::valid_pointer(newEntity.P_Info))
         {
+            if (!newEntity.isLocal)
+            {
+                const std::string nickname = ReadUnityStringFieldSafe(
+                    newEntity.P_Info + sdk::PlayerInfo::Nickname
+                );
+
+                if (!nickname.empty())
+                    newEntity.name = nickname;
+
+                uint64_t settingsPtr = 0;
+                if (TryReadPtr(
+                    newEntity.P_Info + sdk::PlayerInfo::Settings,
+                    settingsPtr))
+                {
+                    int roleId = newEntity.roleId;
+                    if (TryReadValue(
+                        settingsPtr + sdk::ProfileSettings::Role,
+                        roleId))
+                    {
+                        newEntity.roleId = roleId;
+                    }
+                }
+            }
+
             if (!TryReadValue(
                 newEntity.P_Info + sdk::PlayerInfo::Side,
                 newEntity.playerSide))
@@ -2632,6 +2752,12 @@ std::optional<PlayerCache> Players::buildEntity(
                     "[PLAYER][INIT] questManager.initQuestManager failed"
                 );
             }
+        }
+        else
+        {
+            newEntity.side = SideToString(newEntity.playerSide);
+            const std::string observedNickname = newEntity.name;
+            ClassifyPvePlayer(newEntity, observedNickname);
         }
 
         return newEntity;
@@ -2767,52 +2893,88 @@ std::optional<PlayerCache> Players::buildEntity(
 
     newEntity.side = SideToString(newEntity.playerSide);
 
-    const bool isSavage = (static_cast<uint32_t>(newEntity.playerSide) &  static_cast<uint32_t>(EPlayerSide::Savage)) != 0;
+    uint64_t voicePtr = 0;
+    TryReadPtr(
+        instance + sdk::ObservedPlayerView::Voice,
+        voicePtr
+    );
+    newEntity.voice = ReadUnityStringSafe(voicePtr, 128);
 
-    if (isSavage)
+    // PVP entities expose Voice. Keep the upstream PVP classification
+    // unchanged, including Black Division handling and generated names.
+    if (!newEntity.voice.empty())
     {
-        if (newEntity.isAi)
+        const bool isSavage =
+            (static_cast<uint32_t>(newEntity.playerSide) &
+                static_cast<uint32_t>(EPlayerSide::Savage)) != 0;
+
+        if (isSavage)
         {
-            uint64_t voicePtr = 0;
+            if (newEntity.isAi)
+            {
+                const AIRole role = GetAIRoleInfo(newEntity.voice);
 
-            TryReadPtr(
-                instance + sdk::ObservedPlayerView::Voice,
-                voicePtr
-            );
+                newEntity.name =
+                    role.Name.empty()
+                    ? "Ai"
+                    : role.Name;
 
-            const std::string voice =  ReadUnityStringSafe(voicePtr, 128);
+                newEntity.isBoss =
+                    role.Type == PlayerType::AIBoss;
+                newEntity.isBlackDivision = role.IsBlackDivision;
 
-            const AIRole role =  GetAIRoleInfo(voice);
+                newEntity.isPlayerScav = false;
+                newEntity.isAi = true;
+                newEntity.isPlayer = false;
+            }
+            else
+            {
+                newEntity.name = "PScav " + std::to_string(mainGame.pmcNumber++);
 
-            newEntity.name =
-                role.Name.empty()
-                ? "Ai"
-                : role.Name;
-
-            newEntity.isBoss =
-                role.Type == PlayerType::AIBoss;
-            newEntity.isBlackDivision = role.IsBlackDivision;
-
-            newEntity.isPlayerScav = false;
-            newEntity.isAi = true;
-            newEntity.isPlayer = false;
+                newEntity.isPlayerScav = true;
+                newEntity.isAi = false;
+                newEntity.isPlayer = true;
+            }
         }
         else
         {
-            newEntity.name = "PScav " + std::to_string(mainGame.pmcNumber++);
+            newEntity.name = "PMC " +  std::to_string(mainGame.pmcNumber++);
 
-            newEntity.isPlayerScav = true;
+            newEntity.isPlayerScav = false;
             newEntity.isAi = false;
             newEntity.isPlayer = true;
         }
     }
     else
     {
-        newEntity.name = "PMC " +  std::to_string(mainGame.pmcNumber++);
+        const std::string observedProfileId =
+            ReadUnityStringFieldSafe(
+                instance + sdk::ObservedPlayerView::ProfileId,
+                64);
+        if (!observedProfileId.empty())
+            newEntity.profileId = observedProfileId;
 
-        newEntity.isPlayerScav = false;
-        newEntity.isAi = false;
-        newEntity.isPlayer = true;
+        const std::string observedAccountId =
+            ReadUnityStringFieldSafe(
+                instance + sdk::ObservedPlayerView::AccountId,
+                64);
+        if (!observedAccountId.empty())
+            newEntity.accountId = observedAccountId;
+
+        const std::string observedNickname =
+            ReadUnityStringFieldSafe(
+                instance + sdk::ObservedPlayerView::NickName,
+                64);
+
+        int roleId = newEntity.roleId;
+        if (TryReadValue(
+            instance + sdk::ObservedPlayerView::Id,
+            roleId))
+        {
+            newEntity.roleId = roleId;
+        }
+
+        ClassifyPvePlayer(newEntity, observedNickname);
     }
 
     return newEntity;

@@ -168,6 +168,7 @@ struct PlayerCache {
 	std::string profileId;
 	std::string side;
 	std::string voice;
+	int roleId;
 	EPlayerSide playerSide;
 
 	glm::vec3 location;
@@ -316,6 +317,7 @@ struct PlayerCache {
 		profileId(""),
 		side(""),
 		voice(""),
+		roleId(-1),
 		hasProfileData(0),
 		triedprofileonce(0),
 		profileStats(0),
