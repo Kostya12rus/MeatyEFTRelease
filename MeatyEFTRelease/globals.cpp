@@ -3,7 +3,7 @@
 
 
 //define globals
-std::string globals::appVersion = "1.0.28.15";
+std::string globals::appVersion = "1.0.28.16";
 float globals::appTextScale = 1.f;
 float globals::appWindowAlpha = 0.7f;
 float globals::appRadarMaxFPS = 60.f;
@@ -82,7 +82,10 @@ int radarGlobals::enemyAimLine = 100;
 float radarGlobals::aimLineTargetAngle = 7.5f;
 bool radarGlobals::getPlayerEquip = false;
 bool radarGlobals::getPlayerStats = false;
+int radarGlobals::tarkovDevDataMode = 1;
 float radarGlobals::textScale = 1.0f;
+int radarGlobals::fontIndex = 0;
+bool radarGlobals::fontBold = true;
 
 bool espGlobals::espEnabled = false;
 bool espGlobals::drawPlayers = false;

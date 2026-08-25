@@ -178,7 +178,8 @@ struct PlayerCache {
 
 	PlayerProfileStats profileStats;
 	bool hasProfileData;
-	bool triedprofileonce;
+	int profileDataMode;
+	unsigned int attemptedProfileDataModes;
 	std::string DT_profileId;
 	std::string DT_accountId;
 	std::string DT_nickname;
@@ -319,7 +320,8 @@ struct PlayerCache {
 		voice(""),
 		roleId(-1),
 		hasProfileData(0),
-		triedprofileonce(0),
+		profileDataMode(-1),
+		attemptedProfileDataModes(0),
 		profileStats(0),
 		DT_profileId(""),
 		DT_accountId(""),
@@ -425,6 +427,7 @@ private:
 	std::atomic<std::int64_t> publishedSnapshotTicks{ 0 };
 	std::atomic<std::int64_t> publishedMotionTicks{ 0 };
 	std::atomic<double> averageMotionIntervalMs{ 0.0 };
+	std::size_t boneResolveCursor{ 0 };
 
 	void publishCacheSnapshotLocked(bool motionUpdated = false);
 

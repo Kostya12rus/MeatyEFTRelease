@@ -18,6 +18,7 @@
 #include "headers/players.h"
 
 #include <iomanip>
+#include <limits>
 #include <sstream>
 
 loot::loot()
@@ -93,6 +94,7 @@ namespace
     constexpr int MAX_LOOT_BUFFER_ITEMS = MAX_LOOT_COUNT;
     constexpr size_t MAX_LOOT_RESOLVE_PER_TICK = 8;
     constexpr size_t MAX_CORPSE_UPDATES_PER_TICK = 1;
+    constexpr size_t MAX_CONTAINER_STATE_UPDATES_PER_TICK = 32;
     constexpr bool ENABLE_LOOT_TRANSFORM_DIAGNOSTICS = false;
     constexpr size_t MAX_OBJECT_NAME_LENGTH = 64;
     constexpr size_t MAX_CLASS_NAME_LENGTH = 64;
@@ -375,6 +377,7 @@ void loot::clearCache()
     publishCacheSnapshotLocked();
     corpseRefreshCursor = 0;
     dogTagRefreshCursor = 0;
+    containerRefreshCursor = 0;
 }
 
 void loot::markFailed(
@@ -388,51 +391,12 @@ void loot::markFailed(
     item.wanted = false;
 }
 
-void loot::markLootWanted(
-    const std::vector<uint64_t>& instances,
-    const glm::vec4& colour)
-{
-    if (instances.empty())
-        return;
-
-    std::unordered_set<uint64_t> instanceSet;
-    instanceSet.reserve(instances.size());
-
-    for (const uint64_t instance : instances)
-    {
-        if (instance != 0)
-            instanceSet.insert(instance);
-    }
-
-    if (instanceSet.empty())
-        return;
-
-    std::unique_lock<std::shared_mutex> lock(lootMutex);
-
-    for (LootList& loot : lootList)
-    {
-        if (loot.instance == 0)
-            continue;
-
-        if (instanceSet.find(loot.instance) == instanceSet.end())
-            continue;
-
-        loot.wanted = true;
-        loot.forceWanted = true;
-        loot.color = colour;
-    }
-
-    publishCacheSnapshotLocked();
-}
-
 void loot::setLootWanted(const uint64_t instance, const bool wanted, const glm::vec4& colour)
 {
     if (instance == 0)
         return;
 
-    const WantedLookup lookup = wanted
-        ? WantedLookup{}
-        : buildWantedLookup();
+    const WantedLookup lookup = buildWantedLookup();
 
     std::unique_lock<std::shared_mutex> lock(lootMutex);
 
@@ -448,32 +412,88 @@ void loot::setLootWanted(const uint64_t instance, const bool wanted, const glm::
     if (it == lootList.end())
         return;
 
+    
+    applyWantedState(*it, lookup);
+
+    if (wanted && it->filterWanted)
+    {
+        publishCacheSnapshotLocked();
+        return;
+    }
+
     it->forceWanted = wanted;
 
     if (wanted)
     {
-        it->wanted = true;
-        it->color = colour;
-        publishCacheSnapshotLocked();
-        return;
+        it->forceColor = colour;
     }
 
-    if (it->pendingResolve || it->failed)
-    {
-        it->wanted = false;
-        publishCacheSnapshotLocked();
-        return;
-    }
-
-    if (it->isItem || it->isQuestItem)
-    {
-        applyWantedState(*it, lookup);
-        publishCacheSnapshotLocked();
-        return;
-    }
-
-    it->wanted = false;
+    applyWantedState(*it, lookup);
     publishCacheSnapshotLocked();
+}
+
+std::optional<glm::vec3> loot::focusClosestLootItem(const uint64_t instance, const std::string& bsgId, const glm::vec4& colour)
+{
+    if (instance == 0 && bsgId.empty())
+        return std::nullopt;
+
+    const WantedLookup lookup = buildWantedLookup();
+    std::unique_lock<std::shared_mutex> lock(lootMutex);
+
+    const auto isMatch = [instance, &bsgId](const LootList& item)
+    {
+        return !bsgId.empty()
+            ? item.bsgId == bsgId
+            : item.instance == instance;
+    };
+
+    LootList* closest = nullptr;
+    float closestDistanceSquared = std::numeric_limits<float>::max();
+
+    for (LootList& item : lootList)
+    {
+        if (!isMatch(item))
+            continue;
+
+        applyWantedState(item, lookup);
+
+        if (item.forceWanted)
+        {
+            item.forceWanted = false;
+            applyWantedState(item, lookup);
+        }
+
+        if (item.pendingResolve || item.failed || !item.hasValidPosition)
+            continue;
+
+        const glm::vec3 difference = item.worldLocation - mainGame.localLocation;
+        const float distanceSquared =
+            difference.x * difference.x +
+            difference.y * difference.y +
+            difference.z * difference.z;
+
+        if (distanceSquared < closestDistanceSquared)
+        {
+            closestDistanceSquared = distanceSquared;
+            closest = &item;
+        }
+    }
+
+    if (!closest)
+    {
+        publishCacheSnapshotLocked();
+        return std::nullopt;
+    }
+
+    if (!closest->filterWanted)
+    {
+        closest->forceWanted = true;
+        closest->forceColor = colour;
+        applyWantedState(*closest, lookup);
+    }
+
+    publishCacheSnapshotLocked();
+    return closest->worldLocation;
 }
 
 bool loot::tryUpdateLootPosition(LootList& item, bool markAsFailedOnError)
@@ -839,7 +859,7 @@ bool loot::buildPointers()
             mainGame.localGameWorld +
                 sdk::ClientLocalGameWorld::LootList,
             nextLootList,
-            false) ||
+            DmaCacheMode::Uncached) ||
             !Utils::valid_pointer(nextLootList))
         {
             if (attempt < 2)
@@ -862,7 +882,7 @@ bool loot::refreshLootListHeader()
     uint64_t nextLootListPtr = 0;
     int nextLootCount = 0;
 
-    ScatterReadBatch batch(mem, false, "Loot");
+    ScatterReadBatch batch(mem, DmaCacheMode::Uncached, "Loot");
 
     if (!batch.Add(lootListP + 0x10, nextLootListPtr) ||
         !batch.Add(lootListP + 0x18, nextLootCount) ||
@@ -903,7 +923,7 @@ bool loot::buildLootBuffer()
 
     const size_t bytes = sizeof(uint64_t) * static_cast<size_t>(itemsToRead);
 
-    if (!mem.Read(lootListPtr + 0x20, loot_buffer.data(), bytes))
+    if (!mem.Read(lootListPtr + 0x20, loot_buffer.data(), bytes, DmaCacheMode::Uncached, "Loot pointer buffer"))
         return false;
 
     return true;
@@ -943,7 +963,7 @@ bool loot::buildNewLootItemsScatter(
 
     // MonoBehaviour.
     {
-        ScatterReadBatch batch(mem, true, "Loot");
+        ScatterReadBatch batch(mem, DmaCacheMode::Cached, "Loot");
 
         for (auto& shell : shellReads)
             batch.Add(shell.instance + 0x10, shell.monoBehaviour);
@@ -960,7 +980,7 @@ bool loot::buildNewLootItemsScatter(
 
     // interactive class and GameObject.
     {
-        ScatterReadBatch batch(mem, true, "Loot");
+        ScatterReadBatch batch(mem, DmaCacheMode::Cached, "Loot");
 
         for (auto& shell : shellReads)
         {
@@ -990,7 +1010,7 @@ bool loot::buildNewLootItemsScatter(
 
     // name pointer and components.
     {
-        ScatterReadBatch batch(mem, true, "Loot");
+        ScatterReadBatch batch(mem, DmaCacheMode::Cached, "Loot");
 
         for (auto& shell : shellReads)
         {
@@ -1020,7 +1040,7 @@ bool loot::buildNewLootItemsScatter(
 
     //transform.
     {
-        ScatterReadBatch batch(mem, true, "Loot");
+        ScatterReadBatch batch(mem, DmaCacheMode::Cached, "Loot");
 
         for (auto& shell : shellReads)
         {
@@ -1082,7 +1102,7 @@ bool loot::buildNewLootItemsScatter(
             item.gameObjectName = mem.readString(
                 item.m_pGameObjectName,
                 MAX_OBJECT_NAME_LENGTH,
-                true
+                DmaCacheMode::Cached
             );
         }
         catch (const std::exception& e)
@@ -1176,7 +1196,7 @@ void loot::classifyObservedLootItemsScatter(std::vector<LootList>& items)
         return;
 
     {
-        ScatterReadBatch batch(mem, true, "Loot");
+        ScatterReadBatch batch(mem, DmaCacheMode::Cached, "Loot");
 
         for (auto& read : reads)
         {
@@ -1198,7 +1218,7 @@ void loot::classifyObservedLootItemsScatter(std::vector<LootList>& items)
     }
 
     {
-        ScatterReadBatch batch(mem, true, "Loot");
+        ScatterReadBatch batch(mem, DmaCacheMode::Cached, "Loot");
 
         for (auto& read : reads)
         {
@@ -1221,7 +1241,7 @@ void loot::classifyObservedLootItemsScatter(std::vector<LootList>& items)
     }
 
     {
-        ScatterReadBatch batch(mem, true, "Loot");
+        ScatterReadBatch batch(mem, DmaCacheMode::Cached, "Loot");
 
         for (auto& read : reads)
         {
@@ -1350,7 +1370,7 @@ void loot::classifyLootableContainersScatter(std::vector<LootList>& items)
         return;
 
     {
-        ScatterReadBatch batch(mem, true, "Loot");
+        ScatterReadBatch batch(mem, DmaCacheMode::Cached, "Loot");
 
         for (auto& read : reads)
         {
@@ -1372,7 +1392,7 @@ void loot::classifyLootableContainersScatter(std::vector<LootList>& items)
     }
 
     {
-        ScatterReadBatch batch(mem, true, "Loot");
+        ScatterReadBatch batch(mem, DmaCacheMode::Cached, "Loot");
 
         for (auto& read : reads)
         {
@@ -1395,7 +1415,7 @@ void loot::classifyLootableContainersScatter(std::vector<LootList>& items)
     }
 
     {
-        ScatterReadBatch batch(mem, true, "Loot");
+        ScatterReadBatch batch(mem, DmaCacheMode::Cached, "Loot");
 
         for (auto& read : reads)
         {
@@ -1418,7 +1438,7 @@ void loot::classifyLootableContainersScatter(std::vector<LootList>& items)
     }
 
     {
-        ScatterReadBatch batch(mem, true, "Loot");
+        ScatterReadBatch batch(mem, DmaCacheMode::Cached, "Loot");
 
         for (auto& read : reads)
         {
@@ -1578,56 +1598,52 @@ loot::WantedLookup loot::buildWantedLookup() const
 
 void loot::applyWantedState(LootList& lootItem, const WantedLookup& lookup) const
 {
-    if (!lootItem.isItem && !lootItem.isQuestItem)
-        return;
+    lootItem.filterWanted = false;
+    lootItem.wanted = false;
+
+    glm::vec4 filterColour{};
+
+    if ((lootItem.isItem || lootItem.isQuestItem) && !lootItem.bsgId.empty())
+    {
+        if (lookup.questIds.contains(lootItem.bsgId))
+        {
+            lootItem.filterWanted = true;
+            filterColour = coloursGlobals::questColour;
+        }
+        else if (lookup.wishlistIds.contains(lootItem.bsgId))
+        {
+            lootItem.filterWanted = true;
+            filterColour = coloursGlobals::wishListColour;
+        }
+        else if (const auto filterIt = lookup.activeFilterItems.find(lootItem.bsgId);
+            filterIt != lookup.activeFilterItems.end())
+        {
+            lootItem.filterWanted = true;
+            filterColour = filterIt->second;
+        }
+        else if (lookup.categoryLootIds.contains(lootItem.bsgId))
+        {
+            lootItem.filterWanted = true;
+            filterColour = lootGlobals::categoryLootColour;
+        }
+        else if (lootGlobals::enableValueLoot &&
+            GetLootValueFilterPrice(lootItem) >= lootGlobals::valueLootFrom)
+        {
+            lootItem.filterWanted = true;
+            filterColour = coloursGlobals::valueLootColour;
+        }
+    }
+
+    lootItem.wanted = lootItem.forceWanted || lootItem.filterWanted;
 
     if (lootItem.forceWanted)
     {
-        lootItem.wanted = true;
+        lootItem.color = lootItem.forceColor;
         return;
     }
 
-    lootItem.wanted = false;
-
-    if (lootItem.bsgId.empty())
-        return;
-
-    if (lookup.questIds.contains(lootItem.bsgId))
-    {
-        lootItem.wanted = true;
-        lootItem.color = coloursGlobals::questColour;
-        return;
-    }
-
-    if (lookup.wishlistIds.contains(lootItem.bsgId))
-    {
-        lootItem.wanted = true;
-        lootItem.color = coloursGlobals::wishListColour;
-        return;
-    }
-
-    const auto filterIt = lookup.activeFilterItems.find(lootItem.bsgId);
-
-    if (filterIt != lookup.activeFilterItems.end())
-    {
-        lootItem.wanted = true;
-        lootItem.color = filterIt->second;
-        return;
-    }
-
-    if (lookup.categoryLootIds.contains(lootItem.bsgId))
-    {
-        lootItem.wanted = true;
-        lootItem.color = lootGlobals::categoryLootColour;
-        return;
-    }
-
-    if (lootGlobals::enableValueLoot &&
-        GetLootValueFilterPrice(lootItem) >= lootGlobals::valueLootFrom)
-    {
-        lootItem.wanted = true;
-        lootItem.color = coloursGlobals::valueLootColour;
-    }
+    if (lootItem.filterWanted)
+        lootItem.color = filterColour;
 }
 
 bool loot::isContainerEnabled(const std::string& name) const
@@ -1659,11 +1675,21 @@ bool loot::isContainerEnabled(const std::string& name) const
 
 void loot::updateLootableContainerStates(std::vector<LootList>& workingCache)
 {
-    std::vector<ContainerOpenedRead> reads;
-    reads.reserve(workingCache.size());
-
-    for (size_t i = 0; i < workingCache.size(); ++i)
+    if (workingCache.empty())
     {
+        containerRefreshCursor = 0;
+        return;
+    }
+
+    std::vector<ContainerOpenedRead> reads;
+    reads.reserve((std::min)(workingCache.size(), MAX_CONTAINER_STATE_UPDATES_PER_TICK));
+
+    for (size_t checked = 0;
+        checked < workingCache.size() &&
+        reads.size() < MAX_CONTAINER_STATE_UPDATES_PER_TICK;
+        ++checked)
+    {
+        const size_t i = containerRefreshCursor++ % workingCache.size();
         LootList& item = workingCache[i];
 
         if (item.failed || !item.isContainer || item.isAirdrop)
@@ -1683,7 +1709,7 @@ void loot::updateLootableContainerStates(std::vector<LootList>& workingCache)
     if (reads.empty())
         return;
 
-    ScatterReadBatch batch(mem, true, "Loot");
+    ScatterReadBatch batch(mem, DmaCacheMode::Uncached, "Loot container state");
 
     for (auto& read : reads)
     {
@@ -1936,7 +1962,7 @@ void loot::scanCorpseEquipment(uint64_t interactive, LootList& lootItem, bool up
         uint64_t slotsPtr = 0;
 
         {
-            ScatterReadBatch batch(mem, true, "Loot");
+            ScatterReadBatch batch(mem, DmaCacheMode::Cached, "Loot");
             batch.Add(interactive + sdk::InteractiveLootItem::Item, itemBase);
 
             if (!batch.Execute())
@@ -1947,7 +1973,7 @@ void loot::scanCorpseEquipment(uint64_t interactive, LootList& lootItem, bool up
             return;
 
         {
-            ScatterReadBatch batch(mem, true, "Loot");
+            ScatterReadBatch batch(mem, DmaCacheMode::Cached, "Loot");
             batch.Add(itemBase + sdk::LootItemMod::Slots, slotsPtr);
 
             if (!batch.Execute())
@@ -1980,7 +2006,7 @@ void loot::scanCorpseEquipment(uint64_t interactive, LootList& lootItem, bool up
 
         // slot
         {
-            ScatterReadBatch batch(mem, false, "Loot");
+            ScatterReadBatch batch(mem, DmaCacheMode::Uncached, "Loot");
 
             for (auto& read : slotReads)
             {
@@ -1994,7 +2020,7 @@ void loot::scanCorpseEquipment(uint64_t interactive, LootList& lootItem, bool up
 
         // name template.
         {
-            ScatterReadBatch batch(mem, true, "Loot");
+            ScatterReadBatch batch(mem, DmaCacheMode::Cached, "Loot");
 
             for (auto& read : slotReads)
             {
@@ -2011,7 +2037,7 @@ void loot::scanCorpseEquipment(uint64_t interactive, LootList& lootItem, bool up
 
         // mongo id.
         {
-            ScatterReadBatch batch(mem, true, "Loot");
+            ScatterReadBatch batch(mem, DmaCacheMode::Cached, "Loot");
 
             for (auto& read : slotReads)
             {
@@ -2046,7 +2072,7 @@ void loot::scanCorpseEquipment(uint64_t interactive, LootList& lootItem, bool up
                 mem.readUnicodeString(
                     read.namePtr + 0x14,
                     read.nameLen,
-                    true
+                    DmaCacheMode::Cached
                 )
             );
 
@@ -2322,15 +2348,12 @@ void loot::lootTask()
 
                 const LootList& current = *currentIt->second;
 
-                if (current.forceWanted)
+                if (current.forceWanted != item.forceWanted)
                 {
-                    item.forceWanted = true;
-                    item.wanted = true;
-                    item.color = current.color;
-                }
-                else if (item.forceWanted)
-                {
-                    item.forceWanted = false;
+                    
+                    item.forceWanted = current.forceWanted;
+                    item.forceColor = current.forceColor;
+                    item.filterWanted = current.filterWanted;
                     item.wanted = current.wanted;
                     item.color = current.color;
                 }

@@ -95,7 +95,11 @@ struct radarGlobals {
     static float aimLineTargetAngle;
     static bool getPlayerEquip;
     static bool getPlayerStats;
+    // 0 = persistent PvP, 1 = PvP Seasonal.
+    static int tarkovDevDataMode;
     static float textScale;
+    static int fontIndex;
+    static bool fontBold;
 
 };
 
