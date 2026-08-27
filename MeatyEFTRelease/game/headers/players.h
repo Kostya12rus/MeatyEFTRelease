@@ -172,6 +172,9 @@ struct PlayerCache {
 	EPlayerSide playerSide;
 
 	glm::vec3 location;
+	glm::vec3 velocity{};
+	bool velocityValid{ false };
+	std::chrono::steady_clock::time_point lastVelocityUpdate{};
 	
 	std::chrono::steady_clock::time_point lastDogTagLookup;
 	bool foundDogTagCache;
@@ -266,6 +269,7 @@ struct PlayerCache {
 	
 	uint64_t P_MovementContext;
 	uint64_t P_RotationAddress;
+	uint64_t P_VelocityAddress{ 0 };
 	uint64_t P_HandsController;
 
 	// Bone related stuff
@@ -404,7 +408,6 @@ public:
 	int getDistance(glm::vec3 point1, glm::vec3 point2);
 	
 	void playersTask();
-	void positionTask();
 	void boneTask();
 	void playerEquipment();
 	void playerMetadataTask();
@@ -428,6 +431,9 @@ private:
 	std::atomic<std::int64_t> publishedMotionTicks{ 0 };
 	std::atomic<double> averageMotionIntervalMs{ 0.0 };
 	std::size_t boneResolveCursor{ 0 };
+	std::chrono::steady_clock::time_point nextFullBoneUpdate{};
+	std::chrono::steady_clock::time_point lastBoneRefreshLog{};
+	std::uint64_t boneRefreshesSinceLastLog{ 0 };
 
 	void publishCacheSnapshotLocked(bool motionUpdated = false);
 
