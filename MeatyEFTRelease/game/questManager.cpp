@@ -11,6 +11,7 @@
 #include <array>
 #include <limits>
 #include <unordered_map>
+#include <unordered_set>
 
 QuestManager questManager;
 std::vector<QuestData> questDataActive;
@@ -324,6 +325,126 @@ namespace
         );
 
         return result;
+    }
+
+    bool ResolveCurrentQuestPointers(
+        const std::vector<QuestData>& activeQuests,
+        std::unordered_map<std::string, std::uint64_t>& pointersById)
+    {
+        pointersById.clear();
+
+        if (activeQuests.empty())
+            return true;
+
+        if (!Utils::valid_pointer(mainGame.localplayerProfile))
+            return false;
+
+        std::unordered_set<std::string> wantedIds;
+        wantedIds.reserve(activeQuests.size());
+
+        for (const auto& quest : activeQuests)
+        {
+            if (!quest.questId.empty())
+                wantedIds.emplace(quest.questId);
+        }
+
+        if (wantedIds.empty())
+            return false;
+
+        std::uint64_t questData = 0;
+
+        if (!mem.TryRead(
+            mainGame.localplayerProfile + sdk::Profile::QuestsData,
+            questData,
+            DmaCacheMode::Uncached) ||
+            !Utils::valid_pointer(questData))
+        {
+            return false;
+        }
+
+        int questCount = 0;
+
+        if (!mem.TryRead(
+            questData + MonoList<std::uint64_t>::CountOffset,
+            questCount,
+            DmaCacheMode::Uncached) ||
+            questCount < 1 ||
+            questCount > kMaxActiveQuestEntries)
+        {
+            return false;
+        }
+
+        std::uint64_t questArray = 0;
+
+        if (!mem.TryRead(
+            questData + MonoList<std::uint64_t>::ArrOffset,
+            questArray,
+            DmaCacheMode::Uncached) ||
+            !Utils::valid_pointer(questArray))
+        {
+            return false;
+        }
+
+        const std::vector<std::uint64_t> questPointers =
+            mem.ReadVector<std::uint64_t>(
+                questArray + MonoList<std::uint64_t>::ArrStartOffset,
+                static_cast<std::size_t>(questCount),
+                DmaCacheMode::Uncached);
+
+        if (questPointers.size() != static_cast<std::size_t>(questCount))
+            return false;
+
+        pointersById.reserve(wantedIds.size());
+        bool completeScan = true;
+
+        for (const std::uint64_t questPtr : questPointers)
+        {
+            if (!Utils::valid_pointer(questPtr))
+            {
+                completeScan = false;
+                continue;
+            }
+
+            std::uint64_t questIdPtr = 0;
+            int questIdLength = 0;
+
+            if (!mem.TryRead(
+                questPtr + sdk::QuestsData::Id,
+                questIdPtr,
+                DmaCacheMode::Uncached) ||
+                !Utils::valid_pointer(questIdPtr) ||
+                !mem.TryRead(
+                    questIdPtr + 0x10,
+                    questIdLength,
+                    DmaCacheMode::Uncached) ||
+                questIdLength <= 0 ||
+                questIdLength > 256)
+            {
+                completeScan = false;
+                continue;
+            }
+
+            std::string questId = TrimEFT(mem.readUnicodeString(
+                questIdPtr + 0x14,
+                questIdLength,
+                DmaCacheMode::Uncached));
+
+            if (questId.empty())
+            {
+                completeScan = false;
+                continue;
+            }
+
+            if (wantedIds.contains(questId))
+                pointersById.insert_or_assign(std::move(questId), questPtr);
+
+            if (pointersById.size() == wantedIds.size())
+                return true;
+        }
+
+        // A complete scan may legitimately omit a quest which has just left
+        // the live list. An incomplete scan is not evidence that it ended.
+        return completeScan;
     }
 
     bool ReadCompletedConditions(
@@ -655,7 +776,21 @@ void QuestManager::updateAndPruneActiveQuests()
         std::vector<std::string> newMasterItems;
         std::vector<QuestLocation> newMasterLocations;
 
-        ScatterReadBatch scatter(mem, DmaCacheMode::Cached, "Quests");
+        std::unordered_map<std::string, std::uint64_t> currentQuestPointers;
+
+        if (!ResolveCurrentQuestPointers(
+            activeSnapshot,
+            currentQuestPointers))
+        {
+            return;
+        }
+
+        // Losing every live pointer at once is treated as a transient read or
+        // profile refresh. Keep the last known-good published quest state.
+        if (currentQuestPointers.empty())
+            return;
+
+        ScatterReadBatch scatter(mem, DmaCacheMode::Uncached, "Quests");
 
         if (!scatter.Valid())
             return;
@@ -667,15 +802,14 @@ void QuestManager::updateAndPruneActiveQuests()
         {
             const auto& quest = activeSnapshot[i];
 
-            if (quest.questId.empty() ||
-                !Utils::valid_pointer(quest.questPtr))
-            {
+            const auto pointerIt = currentQuestPointers.find(quest.questId);
+
+            if (pointerIt == currentQuestPointers.end())
                 continue;
-            }
 
             LiveQuestRead live{};
             live.snapshotIndex = i;
-            live.questPtr = quest.questPtr;
+            live.questPtr = pointerIt->second;
             liveQuests.emplace_back(std::move(live));
         }
 
@@ -698,6 +832,27 @@ void QuestManager::updateAndPruneActiveQuests()
 
         if (!scatter.Execute("Quest live state"))
             return;
+
+        // Scatter execution can succeed even if an individual request was not
+        // fully captured. Verify every destructive non-started result before
+        // it is allowed to prune a previously active quest.
+        for (auto& live : liveQuests)
+        {
+            if (live.status == 2)
+                continue;
+
+            int verifiedStatus = 0;
+
+            if (!mem.TryRead(
+                live.questPtr + sdk::QuestsData::Status,
+                verifiedStatus,
+                DmaCacheMode::Uncached))
+            {
+                return;
+            }
+
+            live.status = verifiedStatus;
+        }
 
         if (!ReadCompletedConditions(scatter, liveQuests))
             return;
