@@ -667,7 +667,29 @@ UpdateResult FileUpdater::Synchronise(const fs::path& applicationDirectory, cons
 
         if (manifestVersion != 1)
         {
-            throw std::runtime_error("Unsupported manifest version: " + std::to_string(manifestVersion));
+            throw std::runtime_error(
+                "Unsupported manifest version: " +
+                std::to_string(manifestVersion)
+            );
+        }
+
+        const auto appVersionIt = manifest.find("appVersion");
+
+        if (appVersionIt == manifest.end())
+        {
+            result.warnings.emplace_back(
+                "appVersion is missing; version notice disabled"
+            );
+        }
+        else if (appVersionIt->is_string())
+        {
+            result.appVersion = appVersionIt->get<std::string>();
+        }
+        else
+        {
+            result.warnings.emplace_back(
+                "appVersion must be a string; version notice disabled"
+            );
         }
 
         if (!manifest.contains("files") || !manifest["files"].is_array())

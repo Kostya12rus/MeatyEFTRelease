@@ -15,6 +15,7 @@ struct UpdateResult
     std::size_t filesSkipped = 0;
     std::size_t filesFailed = 0;
 
+    std::string appVersion;
     std::string error;
     std::vector<std::string> warnings;
 };

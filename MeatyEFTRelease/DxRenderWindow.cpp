@@ -1,6 +1,7 @@
 #include "app/debug.h"
 #include "app/DxRenderWindow.h"
 #include "app/fuserRender.h"
+#include "resource.h"
 
 #include <algorithm>
 #include <array>
@@ -724,6 +725,8 @@ bool DxRenderWindow::CreateAppWindow()
     wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc = DxRenderWindow::WndProc;
     wc.hInstance = hInstance;
+    wc.hIcon = static_cast<HICON>(LoadImageW(hInstance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR | LR_SHARED));
+    wc.hIconSm = static_cast<HICON>(LoadImageW(hInstance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR | LR_SHARED));
     wc.hCursor = LoadCursorW(nullptr, (LPCWSTR)IDC_ARROW);
     wc.hbrBackground = nullptr;
     wc.lpszClassName = DX_RENDER_WINDOW_CLASS_NAME;
@@ -1418,6 +1421,18 @@ void DxRenderWindow::RenderDrawCommands(const std::vector<DrawCommand>& commands
     if (!IsSafeScale(scale))
         scale = 1.0f;
 
+    const float renderOffsetX = std::clamp(
+        std::isfinite(cfg.renderOffsetX) ? cfg.renderOffsetX : 0.0f,
+        -500.0f,
+        500.0f);
+    const float renderOffsetY = std::clamp(
+        std::isfinite(cfg.renderOffsetY) ? cfg.renderOffsetY : 0.0f,
+        -500.0f,
+        500.0f);
+
+    m_d2dRenderTarget->SetTransform(
+        D2D1::Matrix3x2F::Translation(renderOffsetX, renderOffsetY));
+
     for (const DrawCommand& cmd : commands)
     {
         if (!IsDrawCommandSafe(cmd))
@@ -1499,6 +1514,8 @@ void DxRenderWindow::RenderDrawCommands(const std::vector<DrawCommand>& commands
             break;
         }
     }
+
+    m_d2dRenderTarget->SetTransform(D2D1::Matrix3x2F::Identity());
 }
 
 void DxRenderWindow::RenderTextCommand(const DrawCommand& cmd, const DxWindowConfig& cfg, float scale)

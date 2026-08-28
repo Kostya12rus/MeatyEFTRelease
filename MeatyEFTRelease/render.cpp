@@ -24,6 +24,7 @@
 #include "app/menuLayout.h"
 #include "game/headers/watchList.h"
 #include "app/aimview.h"
+#include "resource.h"
 
 #include <cctype>
 #include <chrono>
@@ -487,6 +488,20 @@ static void renderMapDetails()
         map_orgW = labyrinth_orgW;
         map_orgH = labyrinth_orgH;
         texture = labyrinth_texture;
+    }
+    else if (mainGame.selectedLocation == "Terminal")
+    {
+        if (!setCurrentMapSpecs)
+        {
+            currentMap::configX = terminal_configX;
+            currentMap::configY = terminal_configY;
+            currentMap::configScale = terminal_configScale;
+            setCurrentMapSpecs = true;
+        }
+
+        map_orgW = terminal_orgW;
+        map_orgH = terminal_orgH;
+        texture = terminal_texture;
     }
     else if (mainGame.selectedLocation == "Icebreaker")
     {
@@ -3307,6 +3322,33 @@ static void renderFuserWindow()
                 if (!editorConfig.transparentBackground)
                     changed |= menuLayout::ColourRow("Colour", "fuserBackground", (float*)&editorConfig.backgroundColour);
             }
+            if (menuLayout::Section("Overlay alignment"))
+            {
+                changed |= menuLayout::SliderFloatRow(
+                    "Horizontal (right +)",
+                    "fuserRenderOffsetX",
+                    &editorConfig.renderOffsetX,
+                    -100.0f,
+                    100.0f,
+                    "%.1f px");
+                changed |= menuLayout::SliderFloatRow(
+                    "Vertical (down +)",
+                    "fuserRenderOffsetY",
+                    &editorConfig.renderOffsetY,
+                    -100.0f,
+                    100.0f,
+                    "%.1f px");
+
+                if (ImGui::Button("Reset alignment", ImVec2(150.0f, 26.0f)))
+                {
+                    editorConfig.renderOffsetX = 0.0f;
+                    editorConfig.renderOffsetY = 0.0f;
+                    changed = true;
+                }
+
+                ImGui::TextDisabled(
+                    "Moves every Fuser draw in physical pixels. Aim is unchanged.");
+            }
             menuLayout::EndTwoColumns();
         }
         if (changed)
@@ -3395,6 +3437,10 @@ static void renderFuserWindow()
             ImGui::Text("Window ready: %s", g_DxWindow.IsWindowReady() ? "Yes" : "No");
             ImGui::Text("Window size: %d x %d", g_DxWindow.GetWindowWidth(), g_DxWindow.GetWindowHeight());
             ImGui::Text("Final scale: %.2f", g_DxWindow.GetFinalRenderScale());
+            ImGui::Text(
+                "Overlay offset: X %.1f px | Y %.1f px",
+                editorConfig.renderOffsetX,
+                editorConfig.renderOffsetY);
             ImGui::Text("Window handle: %s", g_DxWindow.GetHWND() ? "Valid" : "None");
         }
     }
@@ -7441,6 +7487,54 @@ static void renderMainScreen()
 
 }
 
+static void renderVersionMismatchNotice()
+{
+    if (!globals::showVersionMismatchWarning)
+        return;
+
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+
+    ImGui::SetNextWindowPos(
+        viewport->GetCenter(),
+        ImGuiCond_Appearing,
+        ImVec2(0.5f, 0.5f)
+    );
+    ImGui::SetNextWindowSize(
+        ImVec2(460.0f, 0.0f),
+        ImGuiCond_Appearing
+    );
+
+    const ImGuiWindowFlags flags =
+        ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoDocking |
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoSavedSettings;
+
+    if (ImGui::Begin("Version notice###VersionMismatchNotice", &globals::showVersionMismatchWarning, flags))
+    {
+        if (ImGui::IsWindowAppearing())
+            ImGui::SetWindowFocus();
+
+        ImGui::TextWrapped(
+            "Application version outdated"
+        );
+        ImGui::Spacing();
+        ImGui::Text("Installed version: %s", globals::appVersion.c_str());
+        ImGui::Text("Latest version:  %s", globals::latestAppVersion.c_str());
+        ImGui::Spacing();
+        ImGui::TextWrapped(
+            "You can continue using this version. Updating is recommended."
+        );
+        ImGui::Spacing();
+
+        if (ImGui::Button("Continue", ImVec2(120.0f, 0.0f)))
+            globals::showVersionMismatchWarning = false;
+    }
+    ImGui::End();
+}
+
 static void load_styles()
 {
     ImVec4* colors = ImGui::GetStyle().Colors;
@@ -7527,6 +7621,8 @@ bool renderThread()
     std::wstring windowTitle = L"MeatyEFT - " + std::wstring(globals::appVersion.begin(), globals::appVersion.end());
 
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, windowTitle.c_str(), nullptr };
+    wc.hIcon = static_cast<HICON>(::LoadImageW(wc.hInstance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, ::GetSystemMetrics(SM_CXICON), ::GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR | LR_SHARED));
+    wc.hIconSm = static_cast<HICON>(::LoadImageW(wc.hInstance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, ::GetSystemMetrics(SM_CXSMICON), ::GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR | LR_SHARED));
     ::RegisterClassExW(&wc);
     HWND hwnd = ::CreateWindowW(wc.lpszClassName, windowTitle.c_str(), WS_OVERLAPPEDWINDOW, 100, 100, 1280, 800, nullptr, nullptr, wc.hInstance, nullptr);
 
@@ -7725,6 +7821,7 @@ bool renderThread()
 
         // Our app function for rendering whats on screen
         renderMainScreen();
+        renderVersionMismatchNotice();
 
         // Rendering
         ImGui::EndFrame();
