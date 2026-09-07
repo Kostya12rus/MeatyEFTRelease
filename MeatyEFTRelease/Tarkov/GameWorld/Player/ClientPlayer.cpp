@@ -11,7 +11,7 @@
 
 namespace
 {
-    constexpr std::chrono::milliseconds corpseReadInterval{ 250 };
+    constexpr std::chrono::milliseconds corpseReadInterval{ 100 };
     constexpr std::chrono::milliseconds handsReadInterval{ 2000 };
     constexpr std::chrono::milliseconds failedReadRetryInterval{ 2500 };
 
@@ -65,6 +65,7 @@ namespace
         if (isBossRoleId(player.roleId))
         {
             player.name = nickname.empty() ? "Boss" : nickname;
+            player.type = PlayerType::AIBoss;
             player.isBoss = true;
             player.isAi = true;
             player.isPlayer = false;
@@ -77,6 +78,7 @@ namespace
             player.name = nickname.empty()
                 ? "PMC " + std::to_string(mainGame.pmcNumber++)
                 : nickname;
+            player.type = PlayerType::PMC;
             player.isBoss = false;
             player.isAi = false;
             player.isPlayer = true;
@@ -87,6 +89,7 @@ namespace
         if (player.isAi)
         {
             player.name = nickname.empty() ? "Scav" : nickname;
+            player.type = PlayerType::AIScav;
             player.isBoss = false;
             player.isPlayer = false;
             player.isPlayerScav = false;
@@ -96,6 +99,7 @@ namespace
         player.name = nickname.empty()
             ? "PScav " + std::to_string(mainGame.pmcNumber++)
             : nickname;
+        player.type = PlayerType::PScav;
         player.isBoss = false;
         player.isAi = false;
         player.isPlayer = true;
@@ -152,6 +156,7 @@ std::optional<Player> ClientPlayer::tryCreate(uint64_t instance, std::string_vie
     {
         player.name = "Ai";
         player.isAi = true;
+		player.type = PlayerType::AIScav;
     }
 
     PlayerMemoryAccess::tryReadChain(instance, { sdk::Player::_playerBody, 0x30, 0x30, 0x10 }, player.playerBoneMatrixPtr, DmaCacheMode::Uncached);
