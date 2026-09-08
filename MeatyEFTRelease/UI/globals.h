@@ -111,6 +111,7 @@ struct radarGlobals {
     // 0 = persistent PvP, 1 = PvP Seasonal.
     static int tarkovDevDataMode;
     static float textScale;
+    static float markerScale;
     static int fontIndex;
     static bool fontBold;
 

@@ -407,6 +407,7 @@ static void renderMenuSettings()
                 if (showResSelectionBox())
                     configManager.SaveConfig();
                 saveIfChanged(menuLayout::SliderFloatRow("Radar text scale", "radarText", &radarGlobals::textScale, 0.75f, 2.0f, "%.2fx"));
+                saveIfChanged(menuLayout::SliderFloatRow("Radar marker scale", "radarMarkers", &radarGlobals::markerScale, 0.75f, 2.0f, "%.2fx"));
                 saveIfChanged(menuLayout::ComboRow("Radar font", "radarFont", &radarGlobals::fontIndex, RadarFontNames, IM_ARRAYSIZE(RadarFontNames)));
                 saveIfChanged(menuLayout::ToggleRow("Bold", "radarFontBold", &radarGlobals::fontBold));
             }
@@ -874,8 +875,10 @@ static void DebugTextPtr(const char* label, uint64_t ptr)
 
 static bool DebugMatrixLooksValid(const glm::highp_mat4& m)
 {
-    int nonZeroCount = 0;
-    float maxAbs = 0.0f;
+    constexpr float kMaxElementValue = 100000.0f;
+    constexpr float kNonZeroEpsilon = 0.00001f;
+    std::array<bool, 4> populatedColumns{};
+    std::array<bool, 4> populatedRows{};
 
     for (int c = 0; c < 4; ++c)
     {
@@ -888,20 +891,19 @@ static bool DebugMatrixLooksValid(const glm::highp_mat4& m)
 
             const float av = std::fabs(v);
 
-            if (av > 100000.0f)
+            if (av > kMaxElementValue)
                 return false;
 
-            if (av > 0.00001f)
+            if (av > kNonZeroEpsilon)
             {
-                ++nonZeroCount;
-
-                if (av > maxAbs)
-                    maxAbs = av;
+                populatedColumns[static_cast<std::size_t>(c)] = true;
+                populatedRows[static_cast<std::size_t>(r)] = true;
             }
         }
     }
 
-    return nonZeroCount >= 6 && maxAbs >= 0.0001f;
+    return std::all_of(populatedColumns.begin(), populatedColumns.end(), [](bool populated) { return populated; }) &&
+        std::all_of(populatedRows.begin(), populatedRows.end(), [](bool populated) { return populated; });
 }
 
 static void DebugMatrixSummary(const char* label, const glm::highp_mat4& m)

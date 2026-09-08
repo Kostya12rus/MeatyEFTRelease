@@ -1376,11 +1376,12 @@ namespace fuserRender
                     continue;
                 }
 
-                if (player.distance > espGlobals::getPlayerDrawDistance(player))
+                const float frameDistance = glm::distance(g_frameLocalLocation, player.location);
+
+                if (!std::isfinite(frameDistance) || frameDistance <= 0.0f || frameDistance > static_cast<float>(espGlobals::getPlayerDrawDistance(player)))
                     continue;
 
-                if (player.distance == 0)
-                    continue;
+                const int displayDistance = static_cast<int>(frameDistance);
 
                 if (FindPassengerBtr(player, cache) != nullptr)
                     continue;
@@ -1407,7 +1408,7 @@ namespace fuserRender
                     std::string info =
                         cleanName +
                         " [" +
-                        std::to_string(player.distance) +
+                        std::to_string(displayDistance) +
                         "m]";
 
                     g_DxWindow.DrawString(
