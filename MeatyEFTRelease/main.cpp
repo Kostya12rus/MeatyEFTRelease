@@ -190,9 +190,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR pCmdLine, 
 
                 g_DogTagAPI.setApiKey(globals::dogTagAPIKey);
 
-                splash.SetStatus(L"Loading Tarkov.dev data...");
+                //tarkovDev.Initialize();
 
-                tarkovDev.Initialize();
+                LOGS.logInfo("[MAIN][TARKOV.DEV] Startup fetch disabled");
 
                 splash.SetStatus(L"Starting application threads...");
 

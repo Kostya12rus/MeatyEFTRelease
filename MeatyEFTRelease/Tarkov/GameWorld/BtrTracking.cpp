@@ -25,7 +25,7 @@ void RegisteredPlayers::tryFindBTR()
             return static_cast<char>(std::tolower(c));
         });
 
-    if (selectedMap != "tarkovstreets" && selectedMap != "woods")
+    if (selectedMap != "tarkovstreets" && selectedMap != "woods" && selectedMap != "lighthouse")
         return;
 
     if (!Utils::valid_pointer(mainGame.localGameWorld))
