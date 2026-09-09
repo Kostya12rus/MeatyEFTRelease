@@ -288,6 +288,11 @@ void RegisteredPlayers::playerMetadataTask()
                 raidEntryNeedsRefresh = player->foundDogTagCache;
             }
 
+            if (job.lookupProfile)
+            {
+                player->attemptedProfileDataModes = job.player.attemptedProfileDataModes;
+            }
+
             if (job.lookupProfile && job.profileLookupSucceeded)
             {
                 player->profileStats = job.player.profileStats;
