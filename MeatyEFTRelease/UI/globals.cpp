@@ -7,7 +7,7 @@
 
 
 //define globals
-std::string globals::appVersion = "1.0.31";
+std::string globals::appVersion = "1.0.32";
 std::string globals::latestAppVersion = "";
 bool globals::showVersionMismatchWarning = false;
 float globals::appTextScale = 1.f;
@@ -105,6 +105,7 @@ bool radarGlobals::drawHandItem = true;
 bool radarGlobals::getPlayerStats = false;
 int radarGlobals::tarkovDevDataMode = 1;
 float radarGlobals::textScale = 1.0f;
+float radarGlobals::markerScale = 1.0f;
 int radarGlobals::fontIndex = 0;
 bool radarGlobals::fontBold = true;
 

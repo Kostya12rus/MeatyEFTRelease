@@ -169,17 +169,28 @@ ImVec4 GetRadarHealthColor(int healthStatus)
 	return ImVec4(0.15f, 1.0f, 0.20f, 1.0f);
 }
 
+constexpr float kRadarPlayerTriangleRadius = 9.0f;
+
+float GetRadarMarkerScale()
+{
+	return std::clamp(radarGlobals::markerScale, 0.75f, 2.0f);
+}
+
+float GetRadarPlayerMarkerRadius()
+{
+	return kRadarPlayerTriangleRadius * GetRadarMarkerScale();
+}
+
 void DrawRadarHealthDot(float centerX, float centerY, int healthStatus)
 {
 	ImDrawList* drawList = ImGui::GetWindowDrawList();
 	const ImVec4 healthColor = GetRadarHealthColor(healthStatus);
 	const ImVec2 center(centerX, centerY);
+	const float markerScale = GetRadarMarkerScale();
 
-	drawList->AddCircleFilled(center, 3.5f, IM_COL32(0, 0, 0, 255), 16);
-	drawList->AddCircleFilled(center, 2.5f, ImColor(healthColor), 16);
+	drawList->AddCircleFilled(center, 3.5f * markerScale, IM_COL32(0, 0, 0, 255), 16);
+	drawList->AddCircleFilled(center, 2.5f * markerScale, ImColor(healthColor), 16);
 }
-
-constexpr float kRadarPlayerTriangleRadius = 9.0f;
 
 glm::vec2 GetRadarFacingDirection(const glm::vec2& rotation)
 {
@@ -206,10 +217,11 @@ void DrawRadarDirectionalTriangle(float centerX, float centerY, const glm::vec2&
 	const glm::vec2 centre(centerX, centerY);
 	const glm::vec2 forward = GetRadarFacingDirection(rotation);
 	const glm::vec2 sideways(-forward.y, forward.x);
-	const glm::vec2 tip = centre + (forward * kRadarPlayerTriangleRadius);
-	const glm::vec2 rear = centre - (forward * (kRadarPlayerTriangleRadius * 0.72f));
-	const glm::vec2 left = rear + (sideways * (kRadarPlayerTriangleRadius * 0.72f));
-	const glm::vec2 right = rear - (sideways * (kRadarPlayerTriangleRadius * 0.72f));
+	const float markerRadius = GetRadarPlayerMarkerRadius();
+	const glm::vec2 tip = centre + (forward * markerRadius);
+	const glm::vec2 rear = centre - (forward * (markerRadius * 0.72f));
+	const glm::vec2 left = rear + (sideways * (markerRadius * 0.72f));
+	const glm::vec2 right = rear - (sideways * (markerRadius * 0.72f));
 
 	drawList->AddTriangleFilled(
 		ImVec2(tip.x, tip.y),
@@ -258,10 +270,13 @@ void DrawRadarBtrMarker(
 	const glm::vec2 centre(centerX, centerY);
 	const glm::vec2 forward = GetRadarFacingDirection(rotation);
 	const glm::vec2 sideways(-forward.y, forward.x);
+	const float markerScale = GetRadarMarkerScale();
 
-	const auto point = [&centre, &forward, &sideways](float along, float across)
+	const auto point = [&centre, &forward, &sideways, markerScale](float along, float across)
 		{
-			const glm::vec2 value = centre + (forward * along) + (sideways * across);
+			const glm::vec2 value = centre +
+				(forward * along * markerScale) +
+				(sideways * across * markerScale);
 			return ImVec2(value.x, value.y);
 		};
 
@@ -292,14 +307,14 @@ void DrawRadarBtrMarker(
 	{
 		const ImVec2 trackStart = point(-8.0f, side);
 		const ImVec2 trackEnd = point(7.0f, side);
-		drawList->AddLine(trackStart, trackEnd, IM_COL32(0, 0, 0, 235), 3.0f);
-		drawList->AddLine(trackStart, trackEnd, markerColour, 1.25f);
+		drawList->AddLine(trackStart, trackEnd, IM_COL32(0, 0, 0, 235), 3.0f * markerScale);
+		drawList->AddLine(trackStart, trackEnd, markerColour, 1.25f * markerScale);
 	}
 
 	const float labelFontSize =
 		ScaleRadarTextSize(std::clamp(21.0f / zoomLevel, 10.0f, 12.0f));
 	const ImVec2 labelSize = MeasureRadarText(font, labelFontSize, "BTR");
-	const float labelX = centerX + 18.0f;
+	const float labelX = centerX + (18.0f * markerScale);
 	const float labelY = passengerColours.empty()
 		? centerY - (labelSize.y * 0.5f)
 		: centerY - labelSize.y + 1.0f;
@@ -806,6 +821,7 @@ void DrawRadarPlayerLoadoutPanel(const PlayerCollection& players)
 
 void DrawRadarPlayerMarkers(float x, float y, float zoomLevel, const Player& player)
 {
+	const float markerRadius = GetRadarPlayerMarkerRadius();
 	const float markerFontSize = std::clamp(30.f / zoomLevel, 7.f, 9.f);
 	const float labelFontSize = ScaleRadarTextSize(markerFontSize + 8.0f);
 	const float metaFontSize = std::max(8.0f, labelFontSize * 0.76f);
@@ -862,7 +878,7 @@ void DrawRadarPlayerMarkers(float x, float y, float zoomLevel, const Player& pla
 	{
 		// Vehicles retain their circular marker; live players use the facing triangle.
 		if (player.isBTR)
-			DrawCircleFilled(x, y, kRadarPlayerTriangleRadius, ImColor(color.x, color.y, color.z, color.w));
+			DrawCircleFilled(x, y, markerRadius, ImColor(color.x, color.y, color.z, color.w));
 		else
 			DrawRadarDirectionalTriangle(x, y, player.rotation, drawColor);
 
@@ -871,18 +887,18 @@ void DrawRadarPlayerMarkers(float x, float y, float zoomLevel, const Player& pla
 
 		if (!player.isBTR)
 			DrawRadarHealthDot(
-				x - kRadarPlayerTriangleRadius - 1.0f,
-				y + kRadarPlayerTriangleRadius - 1.0f,
+				x - markerRadius - 1.0f,
+				y + markerRadius - 1.0f,
 				player.healthETAG);
 
-		HandlePlayerSlotClick(x, y, kRadarPlayerTriangleRadius, player);
+		HandlePlayerSlotClick(x, y, markerRadius, player);
 
 		if (radarGlobals::minimalView)
 			return;
 
 		// Height is useful positional information for every player type, including
 		// anonymous AI scavs.
-		const float heightRightX = x - kRadarPlayerTriangleRadius - 5.0f;
+		const float heightRightX = x - markerRadius - 5.0f;
 		const ImVec2 heightIconSize = MeasureRadarText(font, heightIconFontSize, hString.c_str());
 		DrawRadarMarkerText(
 			draw_list,
@@ -904,7 +920,7 @@ void DrawRadarPlayerMarkers(float x, float y, float zoomLevel, const Player& pla
 				hStringVal.c_str());
 		}
 
-		const float textX = x + kRadarPlayerTriangleRadius + labelGap;
+		const float textX = x + markerRadius + labelGap;
 		if (genericAiScav)
 		{
 			if (showHeldItem)

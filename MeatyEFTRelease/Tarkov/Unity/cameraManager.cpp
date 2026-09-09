@@ -43,7 +43,7 @@ namespace
     constexpr std::uint64_t kComponentArrayEntryComponent = 0x8;
     constexpr std::uint64_t kComponentArrayEntryStride = 0x10;
 
-    constexpr std::uint64_t kCameraManagerBss = 0x5B76058;
+    constexpr std::uint64_t kCameraManagerBss = 0x6E0C5A0;
     constexpr std::uint64_t kIl2CppClassStaticFields = 0xB8;
 
     constexpr std::uint64_t kCameraManagerInstance = 0x0;
@@ -1170,27 +1170,30 @@ void CameraManager::publish(CameraManagerState&& state)
 
 bool CameraManager::matrixLooksValid(const glm::highp_mat4& matrix)
 {
-    
+    constexpr float kMaxElementValue = 100000.0f;
+    constexpr float kNonZeroEpsilon = 0.00001f;
+    std::array<bool, 4> populatedColumns{};
+    std::array<bool, 4> populatedRows{};
+
     for (int column = 0; column < 4; ++column)
+    {
         for (int row = 0; row < 4; ++row)
-            if (!std::isfinite(matrix[column][row]) || std::fabs(matrix[column][row]) > 100000.0f)
+        {
+            const float value = matrix[column][row];
+
+            if (!std::isfinite(value) || std::fabs(value) > kMaxElementValue)
                 return false;
 
-    const float m11 = matrix[0][0];
-    const float m22 = matrix[1][1];
-    const float m33 = matrix[2][2];
-    const float m44 = matrix[3][3];
-
-    if (!std::isfinite(m11) || !std::isfinite(m22) ||
-        !std::isfinite(m33) || !std::isfinite(m44) ||
-        (m11 == 0.0f && m22 == 0.0f && m33 == 0.0f && m44 == 0.0f))
-    {
-        return false;
+            if (std::fabs(value) > kNonZeroEpsilon)
+            {
+                populatedColumns[static_cast<std::size_t>(column)] = true;
+                populatedRows[static_cast<std::size_t>(row)] = true;
+            }
+        }
     }
 
-    return std::fabs(matrix[3][0]) <= 5000.0f &&
-        std::fabs(matrix[3][1]) <= 5000.0f &&
-        std::fabs(matrix[3][2]) <= 5000.0f;
+    return std::all_of(populatedColumns.begin(), populatedColumns.end(), [](bool populated) { return populated; }) &&
+        std::all_of(populatedRows.begin(), populatedRows.end(), [](bool populated) { return populated; });
 }
 
 bool CameraManager::validFov(float value)

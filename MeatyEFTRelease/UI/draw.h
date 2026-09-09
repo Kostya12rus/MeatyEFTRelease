@@ -284,13 +284,13 @@ void drawPlayers()
                     player.aimLineTargetConfirmed)
                 {
                     const glm::vec3 targetPosition = mapControl.getMapPosition(player.aimLineTargetLocation, currentMap::configX, currentMap::configY, currentMap::configScale);
-					const glm::vec2 lineStart = GetRadarFacingPoint(glm::vec2(position.x, position.y), player.rotation, kRadarPlayerTriangleRadius);
+					const glm::vec2 lineStart = GetRadarFacingPoint(glm::vec2(position.x, position.y), player.rotation, GetRadarPlayerMarkerRadius());
 
 					DrawLine(lineStart.x, lineStart.y, targetPosition.x, targetPosition.y, GetRadarPlayerMarkerColour(player), 3);
                 }
                 else
                 {
-					drawAimLine(glm::vec2(position.x, position.y), player.rotation, aimLineLen, GetRadarPlayerMarkerColour(player), kRadarPlayerTriangleRadius);
+					drawAimLine(glm::vec2(position.x, position.y), player.rotation, aimLineLen, GetRadarPlayerMarkerColour(player), GetRadarPlayerMarkerRadius());
                 }
 
                 if (!radarGlobals::minimalView)
@@ -340,7 +340,7 @@ void drawLocalPlayer()
 
 
 
-    drawAimLine(glm::vec2(position.x, position.y), mainGame.localRotation, radarGlobals::localAimLine, coloursGlobals::playerLocal, kRadarPlayerTriangleRadius
+    drawAimLine(glm::vec2(position.x, position.y), mainGame.localRotation, radarGlobals::localAimLine, coloursGlobals::playerLocal, GetRadarPlayerMarkerRadius()
     );
 
     DrawRadarDirectionalTriangle(position.x, position.y, mainGame.localRotation,

@@ -405,6 +405,7 @@ void to_json(nlohmann::json& j, const radarGlobals& r) {
         {"getPlayerStats", r.getPlayerStats},
         {"tarkovDevDataMode", r.tarkovDevDataMode},
         {"textScale", r.textScale},
+        {"markerScale", r.markerScale},
         {"fontIndex", r.fontIndex},
         {"fontBold", r.fontBold}
 
@@ -433,6 +434,7 @@ void from_json(const nlohmann::json& j, radarGlobals& r) {
     r.getPlayerStats = j.value("getPlayerStats", r.getPlayerStats);
     r.tarkovDevDataMode = std::clamp(j.value("tarkovDevDataMode", r.tarkovDevDataMode), 0, 1);
     r.textScale = std::clamp(j.value("textScale", r.textScale), 0.75f, 2.0f);
+    r.markerScale = std::clamp(j.value("markerScale", r.markerScale), 0.75f, 2.0f);
     r.fontIndex = std::clamp(j.value("fontIndex", r.fontIndex), 0, 2);
     r.fontBold = j.value("fontBold", r.fontBold);
 }
