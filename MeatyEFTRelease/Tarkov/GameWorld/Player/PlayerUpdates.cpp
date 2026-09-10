@@ -16,11 +16,24 @@
 
 namespace
 {
-    bool isLocalGroupRosterProtectionActive()
+    bool isLocalGroupRosterProtectionActive(const PlayerCollection& cache)
     {
         constexpr int maximumRegisteredPlayers = 512;
 
-        if (!Utils::valid_pointer(mainGame.localPlayerPtr) || mainGame.localGroupId.empty())
+        if (mainGame.localGroupId.empty())
+            return false;
+
+        for (const Player& player : cache)
+        {
+            const bool isLocalPlayer =
+                player.isLocal ||
+                (Utils::valid_pointer(mainGame.localPlayerPtr) && player.instance == mainGame.localPlayerPtr);
+
+            if (isLocalPlayer && (player.isDead || player.hasExfiled))
+                return true;
+        }
+
+        if (!Utils::valid_pointer(mainGame.localPlayerPtr))
             return false;
 
         if (mainGame.registeredPlayersCount <= 0 || mainGame.registeredPlayersCount > maximumRegisteredPlayers)
@@ -154,7 +167,7 @@ void RegisteredPlayers::updateEntity()
         return;
     }
 
-    const bool rosterProtectionActive = isLocalGroupRosterProtectionActive();
+    const bool rosterProtectionActive = isLocalGroupRosterProtectionActive(playerCache);
 
     {
         std::lock_guard<std::mutex> lock(playerMutex);
@@ -168,7 +181,10 @@ void RegisteredPlayers::updateEntity()
                 continue;
             }
 
-            if (isProtectedLocalGroupMember(player, rosterProtectionActive) && !Utils::valid_pointer(player.P_CorpseClass))
+            const bool isProtectedGroupMember =
+                isProtectedLocalGroupMember(player, rosterProtectionActive);
+
+            if (isProtectedGroupMember)
             {
                 player.isDead = false;
                 player.hasExfiled = false;
@@ -181,7 +197,8 @@ void RegisteredPlayers::updateEntity()
                 continue;
             }
 
-            if (Utils::valid_pointer(player.P_CorpseClass))
+            if (!isProtectedGroupMember &&
+                Utils::valid_pointer(player.P_CorpseClass))
             {
                 player.isDead = true;
                 player.distance = getDistance(player.location, mainGame.localLocation);

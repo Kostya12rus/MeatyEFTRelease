@@ -686,21 +686,6 @@ void AimViewWidget::DrawPlayers(ImDrawList* drawList) {
         if (showName)
             label = cleanName;
 
-        if (espGlobals::drawHandItem && !player.isBTR)
-        {
-            const std::string itemName = CleanText(player.observedHandsInfo.itemName);
-            const std::string ammoName = CleanText(player.observedHandsInfo.ammoName);
-
-            if (!itemName.empty() || !ammoName.empty())
-            {
-                if (!label.empty())
-                    label += '\n';
-
-                label += itemName + " (" + ammoName + "/" +
-                    std::to_string(player.observedHandsInfo.magazineCount) + ")";
-            }
-        }
-
         if (espGlobals::drawPlayerEquip && radarGlobals::getPlayerEquip)
         {
             for (const auto& slot : player._slots)
@@ -709,7 +694,8 @@ void AimViewWidget::DrawPlayers(ImDrawList* drawList) {
 
                 if (!slot.wanted ||
                     slotName == "SecuredContainer" ||
-                    (player.isPlayer && slotName == "Scabbard"))
+                    (player.isPlayer && !player.isPlayerScav && !player.isAi &&
+                        slotName == "Scabbard"))
                 {
                     continue;
                 }

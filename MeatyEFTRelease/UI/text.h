@@ -505,7 +505,8 @@ bool IsRadarPlayerEquipmentSlotVisible(const Player& player, const slots& slot)
 	if (slotName == "SecuredContainer" || slotName == "Dogtag")
 		return false;
 
-	return !(player.isPlayer && slotName == "Scabbard");
+	const bool isPmc = player.isPlayer && !player.isPlayerScav && !player.isAi;
+	return !(isPmc && slotName == "Scabbard");
 }
 
 bool IsGenericRadarAiScav(const Player& player)

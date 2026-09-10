@@ -101,7 +101,7 @@ namespace sdk
 
 	namespace Firearms
 	{
-		constexpr uint64_t Fireport = 0xD0;
+		constexpr uint64_t Fireport = 0xD8;
 	}
 
 	namespace BifacialTransform
@@ -111,7 +111,7 @@ namespace sdk
 
 	namespace PlayerBones
 	{
-		constexpr uint64_t Fireport = 0x1C8;
+		constexpr uint64_t Fireport = 0x1D0;
 	}
 
 	namespace PlayerSpring
@@ -175,11 +175,24 @@ namespace sdk
 		constexpr uint64_t Required = 0x18; // Boolean
 	}
 
-	namespace LootItemWeapon
+	// EFT.InventoryLogic.Weapon
+	namespace Weapon
 	{
 		constexpr uint64_t FireMode = 0xA0;
 		constexpr uint64_t Chambers = 0xB0;
-		constexpr uint64_t magSlotCache = 0xC8;
+		constexpr uint64_t MagazineSlotCache = 0xC8;
+	}
+
+	// EFT.InventoryLogic.Magazine
+	namespace Magazine
+	{
+		constexpr uint64_t Cartridges = 0xA8;
+	}
+
+	// EFT.InventoryLogic.Item
+	namespace Item
+	{
+		constexpr uint64_t StackObjectsCount = 0x24;
 	}
 
 	namespace StackSlot

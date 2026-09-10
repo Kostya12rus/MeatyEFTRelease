@@ -83,8 +83,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR pCmdLine, 
 
     ConfigManager configManager("config.json", "lootFilters.json");
 
-    TarkovDev tarkovDev;
-
     std::thread startupThread([&]()
         {
             try
@@ -190,9 +188,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PSTR pCmdLine, 
 
                 g_DogTagAPI.setApiKey(globals::dogTagAPIKey);
 
-                //tarkovDev.Initialize();
+                splash.SetStatus(L"Loading Tarkov.dev data...");
 
-                LOGS.logInfo("[MAIN][TARKOV.DEV] Startup fetch disabled");
+                constexpr bool forceTarkovDevJsonRefresh = false;
+                constexpr bool pauseTarkovDevRefresh = true;
+
+                if (!tarkovDev.Initialize(forceTarkovDevJsonRefresh, pauseTarkovDevRefresh))
+                    LOGS.logWarn("[MAIN][TARKOV.DEV] Failed to load one or more startup datasets");
 
                 splash.SetStatus(L"Starting application threads...");
 

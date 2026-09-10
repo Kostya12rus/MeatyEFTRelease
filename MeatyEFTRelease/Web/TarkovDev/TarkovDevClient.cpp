@@ -971,13 +971,13 @@ std::optional<PlayerProfileStats> TarkovDevProfileClient::FetchProfile(long long
     return info;
 }
 
-bool TarkovDev::Initialize(bool forceRefresh)
+bool TarkovDev::Initialize(bool forceRefresh, bool pauseRefresh)
 {
-    const bool tasksOk = !loadJsonQuests(forceRefresh).empty();
+    const bool tasksOk = !loadDataset(Dataset::Tasks, forceRefresh, pauseRefresh).empty();
     if (tasksOk)
         buildTasksList();
 
-    const bool itemsOk = !loadJsonItems(forceRefresh).empty();
+    const bool itemsOk = !loadDataset(Dataset::Items, forceRefresh, pauseRefresh).empty();
     if (itemsOk)
     {
         buildItemList();
@@ -997,7 +997,7 @@ std::string TarkovDev::loadJsonItems(bool forceRefresh)
     return loadDataset(Dataset::Items, forceRefresh);
 }
 
-std::string TarkovDev::loadDataset(Dataset dataset, bool forceRefresh)
+std::string TarkovDev::loadDataset(Dataset dataset, bool forceRefresh, bool pauseRefresh)
 {
     const bool isTasks = dataset == Dataset::Tasks;
 
@@ -1068,6 +1068,19 @@ std::string TarkovDev::loadDataset(Dataset dataset, bool forceRefresh)
         const std::string freshCache = tryCache(true);
         if (!freshCache.empty())
             return freshCache;
+    }
+
+    if (pauseRefresh)
+    {
+        const std::string cached = tryCache(false);
+        if (!cached.empty())
+        {
+            LOGS.logInfo(std::string("[") + label + "][CACHE] Refresh paused; using cached JSON regardless of age");
+            return cached;
+        }
+
+        LOGS.logWarn(std::string("[") + label + "][CACHE] Refresh paused and no usable cache is available");
+        return rawStorage;
     }
 
     CurlGlobalGuard& curlGlobal = GetCurlGlobalGuard();
