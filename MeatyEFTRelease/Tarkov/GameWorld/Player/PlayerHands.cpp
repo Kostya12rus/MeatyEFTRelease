@@ -101,7 +101,7 @@ static inline bool TryGetAmmoTemplateFromWeapon(
     // ----------------------------------------------------
     uint64_t chambersPtr = 0;
 
-    if (mem.TryRead<uint64_t>(itemBase + sdk::LootItemWeapon::Chambers, chambersPtr) &&
+    if (mem.TryRead<uint64_t>(itemBase + sdk::Weapon::Chambers, chambersPtr) &&
         Utils::valid_pointer(chambersPtr))
     {
         CountLoadedChamberArray(
@@ -118,7 +118,7 @@ static inline bool TryGetAmmoTemplateFromWeapon(
     uint64_t magSlot = 0;
     uint64_t magItemPtr = 0;
 
-    if (!mem.TryRead<uint64_t>(itemBase + sdk::LootItemWeapon::magSlotCache, magSlot) ||
+    if (!mem.TryRead<uint64_t>(itemBase + sdk::Weapon::MagazineSlotCache, magSlot) ||
         !Utils::valid_pointer(magSlot))
     {
         return false;
@@ -166,7 +166,7 @@ static inline bool TryGetAmmoTemplateFromWeapon(
     uint64_t cartridges = 0;
     uint64_t magStackPtr = 0;
 
-    if (!mem.TryRead<uint64_t>(magItemPtr + 0xA8, cartridges) ||
+    if (!mem.TryRead<uint64_t>(magItemPtr + sdk::Magazine::Cartridges, cartridges) ||
         !Utils::valid_pointer(cartridges))
     {
         return false;
@@ -203,7 +203,7 @@ static inline bool TryGetAmmoTemplateFromWeapon(
 
             int stackNumber = 0;
 
-            if (!mem.TryRead<int>(stack + 0x24, stackNumber))
+            if (!mem.TryRead<int>(stack + sdk::Item::StackObjectsCount, stackNumber))
                 continue;
 
             if (stackNumber < 0)

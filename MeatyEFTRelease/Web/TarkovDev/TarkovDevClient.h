@@ -104,7 +104,7 @@ private:
 class TarkovDev
 {
 public:
-    bool Initialize(bool forceRefresh = false);
+    bool Initialize(bool forceRefresh = false, bool pauseRefresh = false);
 
     std::string loadJsonQuests(bool forceRefresh = false);
     std::string loadJsonItems(bool forceRefresh = false);
@@ -123,7 +123,7 @@ private:
         Items
     };
 
-    std::string loadDataset(Dataset dataset, bool forceRefresh);
+    std::string loadDataset(Dataset dataset, bool forceRefresh, bool pauseRefresh = false);
 
     static size_t data_write(void* buf, size_t size, size_t nmemb, void* userp);
 

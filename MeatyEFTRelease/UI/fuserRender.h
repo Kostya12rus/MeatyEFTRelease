@@ -1453,7 +1453,8 @@ namespace fuserRender
 
                                 if (!slot.wanted ||
                                     slotName == "SecuredContainer" ||
-                                    (player.isPlayer && slotName == "Scabbard"))
+                                    (player.isPlayer && !player.isPlayerScav && !player.isAi &&
+                                        slotName == "Scabbard"))
                                 {
                                     continue;
                                 }

@@ -28,7 +28,8 @@ static const std::unordered_set<std::string> skipNames =
     "Compass",
     "ArmBand",
     "Eyewear",
-    "Pockets"
+    "Pockets",
+    "SecuredContainer"
 };
 
 void RegisteredPlayers::playerEquipment()
@@ -82,6 +83,7 @@ void RegisteredPlayers::playerEquipment()
     {
         uint64_t instance = 0;
         bool isPlayer = false;
+        bool isPmc = false;
         std::string profileId;
         SlotVec slots;
         Clock::time_point updateTime{};
@@ -100,6 +102,7 @@ void RegisteredPlayers::playerEquipment()
     struct ScanResult
     {
         uint64_t instance = 0;
+        bool isPmc = false;
         SlotVec slots;
         PlayerValueT playerValue{};
         Clock::time_point updateTime{};
@@ -527,6 +530,7 @@ void RegisteredPlayers::playerEquipment()
                 ScanJob job{};
                 job.instance = player.instance;
                 job.isPlayer = player.isPlayer;
+                job.isPmc = player.isPlayer && !player.isPlayerScav && !player.isAi;
                 job.profileId = player.profileId;
                 job.slots = player._slots;
                 job.updateTime = now;
@@ -558,7 +562,7 @@ void RegisteredPlayers::playerEquipment()
                 const SlotEntry& slot =
                     job.slots[slotIndex];
 
-                if (job.isPlayer &&
+                if (job.isPmc &&
                     slot.name == "Scabbard")
                 {
                     continue;
@@ -680,6 +684,7 @@ void RegisteredPlayers::playerEquipment()
             ScanResult result{};
 
             result.instance = job.instance;
+            result.isPmc = job.isPmc;
             result.updateTime = job.updateTime;
             result.slots = std::move(job.slots);
             result.playerValue = 0;
@@ -885,7 +890,7 @@ void RegisteredPlayers::playerEquipment()
 
                 if (slotName == "SecuredContainer" ||
                     slotName == "Dogtag" ||
-                    slotName == "Scabbard")
+                    (result.isPmc && slotName == "Scabbard"))
                 {
                     continue;
                 }

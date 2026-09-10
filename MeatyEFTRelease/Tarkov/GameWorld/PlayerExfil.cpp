@@ -49,11 +49,32 @@ void RegisteredPlayers::checkExfil()
         return;
     }
 
-    // updatePlayerList() only commits a roster after uncached root, header,
-    // contents and verification reads all succeed. Even a valid fresh roster
-    // can briefly omit an entity while the game mutates the list, so absence
-    // must persist across independently committed snapshots before it is
-    // treated as an exfil.
+    const bool localPlayerMissingFromRoster =
+        Utils::valid_pointer(mainGame.localPlayerPtr) &&
+        !mainGame.localGroupId.empty() &&
+        !alivePlayers.contains(mainGame.localPlayerPtr);
+
+    bool localPlayerIsInactive = false;
+    for (const Player& cachedPlayer : cache)
+    {
+        const bool isLocalPlayer =
+            cachedPlayer.isLocal ||
+            (Utils::valid_pointer(mainGame.localPlayerPtr) &&
+                cachedPlayer.instance == mainGame.localPlayerPtr);
+
+        if (isLocalPlayer &&
+            (cachedPlayer.isDead || cachedPlayer.hasExfiled))
+        {
+            localPlayerIsInactive = true;
+            break;
+        }
+    }
+
+    const bool localGroupProtectionActive =
+        !mainGame.localGroupId.empty() &&
+        (localPlayerMissingFromRoster || localPlayerIsInactive);
+
+    
     using Clock = std::chrono::steady_clock;
     using Milliseconds = std::chrono::milliseconds;
 
@@ -67,14 +88,40 @@ void RegisteredPlayers::checkExfil()
         if (cachedPlayer.isBTR)
             continue;
 
-        if (cachedPlayer.isDead)
-            continue;
-
         if (!Utils::valid_pointer(cachedPlayer.instance))
             continue;
 
         const bool stillRegistered =
             alivePlayers.find(cachedPlayer.instance) != alivePlayers.end();
+
+        const bool isProtectedGroupMember =
+            localGroupProtectionActive &&
+            !cachedPlayer.isLocal &&
+            cachedPlayer.instance != mainGame.localPlayerPtr &&
+            cachedPlayer.groupId == mainGame.localGroupId;
+
+        if (isProtectedGroupMember)
+        {
+            cachedPlayer.isDead = false;
+            cachedPlayer.hasExfiled = false;
+            cachedPlayer.consecutiveRosterMisses = 0;
+            cachedPlayer.rosterMissingSince = {};
+            continue;
+        }
+
+        if (cachedPlayer.isLocal ||
+            cachedPlayer.instance == mainGame.localPlayerPtr)
+        {
+            if (!stillRegistered)
+                cachedPlayer.hasExfiled = false;
+
+            cachedPlayer.consecutiveRosterMisses = 0;
+            cachedPlayer.rosterMissingSince = {};
+            continue;
+        }
+
+        if (cachedPlayer.isDead)
+            continue;
 
         if (stillRegistered)
         {
